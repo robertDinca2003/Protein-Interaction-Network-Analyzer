@@ -1,6 +1,7 @@
 package org.pina.model;
 
 import java.util.HashSet;
+import java.util.Objects;
 import java.util.Set;
 
 public class Protein {
@@ -23,6 +24,18 @@ public class Protein {
         this.name = protein.name;
         this.sequence = protein.sequence;
         this.functions = new HashSet<>(protein.functions);
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (o == null || getClass() != o.getClass()) return false;
+        Protein protein = (Protein) o;
+        return Objects.equals(uniprotId, protein.uniprotId) && Objects.equals(name, protein.name);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(uniprotId, name);
     }
 
     public String getUniprotId() {
