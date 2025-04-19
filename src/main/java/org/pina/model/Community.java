@@ -1,6 +1,8 @@
 package org.pina.model;
 
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 public class Community {
@@ -36,5 +38,28 @@ public class Community {
 
     public void setFunctionalAnnotation(String functionalAnnotation) {
         this.functionalAnnotation = functionalAnnotation;
+    }
+
+    @Override
+    public String toString() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("=== Community ").append(id).append(" ===\n");
+        sb.append("Functional Annotation: ").append(
+                functionalAnnotation.isBlank() ? "None" : functionalAnnotation
+        ).append("\n");
+
+        sb.append("\nProteins (").append(proteins.size()).append("):\n");
+        if (proteins.isEmpty()) {
+            sb.append("  - No proteins in this community");
+        } else {
+            boolean first = true;
+            for (Protein p : proteins) {
+                if (!first) sb.append("\n");  // New line after first entry
+                sb.append("  - ").append(p.getName())
+                        .append(" (").append(p.getUniprotId()).append(")");
+                first = false;
+            }
+        }
+        return sb.toString();
     }
 }

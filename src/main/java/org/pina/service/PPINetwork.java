@@ -19,6 +19,7 @@ public class PPINetwork {
         networkProteins = new ArrayList<>();
         adjacencyList = new HashMap<>();
         communities = new HashSet<>();
+        interactions = new ArrayList<>();
     }
 
     public PPINetwork(String networkName, List<Protein> networkProteins, List<Interaction> interactions, Set<Community> communities, Map<Protein, List<Protein>> adjacencyList) {
@@ -29,14 +30,42 @@ public class PPINetwork {
         this.adjacencyList = adjacencyList;
     }
 
-    public void addProtein(Protein protein) {
-        if (!networkProteins.contains(protein)) {
-            networkProteins.add(protein);
+    public boolean addProtein(Protein protein) {
+        if (networkProteins.contains(protein)) {
+//            System.out.println("Protein " + protein.getName() + " already exists!");
+            return false;
         }
-        else{
-            System.out.println("Already added protein");
+        networkProteins.add(protein);
+        adjacencyList.put(protein, new ArrayList<>());
+        return true;
+    }
+
+    public void addInteraction(Protein p1, Protein p2, double score) {
+        Interaction interaction = new Interaction(p1, p2, score);
+
+        // Add to interactions list
+        if (!interactions.contains(interaction)) {
+            interactions.add(interaction);
+
+            // Update adjacency list
+            adjacencyList.get(p1).add(p2);
+            adjacencyList.get(p2).add(p1);
         }
     }
+
+    public List<Protein> getProteins() {
+        return new ArrayList<>(networkProteins);
+    }
+
+    public boolean containsProtein(String proteinName) {
+        return networkProteins.stream()
+                .anyMatch(p -> p.getName().equalsIgnoreCase(proteinName));
+    }
+
+    public int getInteractionCount() {
+        return interactions.size();
+    }
+
     public void removeProtein(Protein protein) {
         networkProteins.remove(protein);
         for (Interaction interaction : interactions) {
@@ -54,11 +83,18 @@ public class PPINetwork {
 
     public List<Map.Entry<Protein, Integer>> findHubProteins() {
         List<Map.Entry<Protein, Integer>> hubProteins = new ArrayList<>();
+
         for (Protein protein : networkProteins) {
-            List<Protein> neighbors = adjacencyList.get(protein);
-            int degree = (neighbors != null) ? neighbors.size() : 0;
-            hubProteins.add(new AbstractMap.SimpleEntry<>(protein, degree));
+            List<Protein> neighbors = adjacencyList.getOrDefault(protein, Collections.emptyList());
+            hubProteins.add(new AbstractMap.SimpleEntry<>(protein, neighbors.size()));
         }
+
+        hubProteins.sort(
+                Comparator.<Map.Entry<Protein, Integer>, Integer>comparing(Map.Entry::getValue)
+                        .reversed()
+                        .thenComparing(e -> e.getKey().getName())
+        );
+
         return hubProteins;
     }
 
@@ -122,5 +158,32 @@ public class PPINetwork {
 
     public void setNetworkName(String networkName) {
         this.networkName = networkName;
+    }
+
+    @Override
+    public String toString() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("=== Network: ").append(networkName).append(" ===\n");
+
+        sb.append("\n» Proteins (").append(networkProteins.size()).append("):\n");
+        for (int i = 0; i <  networkProteins.size(); i++) {
+            Protein p = networkProteins.get(i);
+            sb.append("- ").append(p.getName())
+                    .append(" (").append(p.getUniprotId()).append(")\n");
+        }
+
+
+        sb.append("\n» Interactions (").append(interactions.size()).append("):\n");
+        for (int i = 0; i < Math.min(3, interactions.size()); i++) {
+            Interaction interaction = interactions.get(i);
+            sb.append("- ").append(interaction.getProtein1().getName())
+                    .append(" ↔ ").append(interaction.getProtein2().getName())
+                    .append(" (Score: ").append(String.format("%.2f", interaction.getConfidenceScore())).append(")\n");
+        }
+        if (interactions.size() > 3) {
+            sb.append("- ...and ").append(interactions.size() - 3).append(" more\n");
+        }
+
+        return sb.toString();
     }
 }

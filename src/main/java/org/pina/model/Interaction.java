@@ -1,16 +1,16 @@
 package org.pina.model;
 
+import java.util.Objects;
+
 public class Interaction {
     private Protein protein1;
     private Protein protein2;
     private double confidenceScore;
-    private String experimentType;
 
-    public Interaction(Protein protein1, Protein protein2, double confidenceScore, String experimentType) {
+    public Interaction(Protein protein1, Protein protein2, double confidenceScore) {
         this.protein1 = protein1;
         this.protein2 = protein2;
         this.confidenceScore = confidenceScore;
-        this.experimentType = experimentType;
     }
 
     public Protein getProtein1() {
@@ -36,12 +36,20 @@ public class Interaction {
     public void setConfidenceScore(double confidenceScore) {
         this.confidenceScore = confidenceScore;
     }
-
-    public String getExperimentType() {
-        return experimentType;
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        Interaction that = (Interaction) o;
+        return (Objects.equals(protein1, that.protein1) &&
+                Objects.equals(protein2, that.protein2)) ||
+                (Objects.equals(protein1, that.protein2) &&
+                        Objects.equals(protein2, that.protein1));
     }
 
-    public void setExperimentType(String experimentType) {
-        this.experimentType = experimentType;
+    @Override
+    public int hashCode() {
+        return Objects.hash(protein1, protein2) + Objects.hash(protein2, protein1);
     }
+
 }
