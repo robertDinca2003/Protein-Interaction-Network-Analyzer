@@ -5,12 +5,12 @@ import java.util.Objects;
 import java.util.Set;
 
 public class Protein {
-    private String uniprotId;
-    private String name;
+    protected String uniprotId;
+    protected String name;
 
-    private String sequence;
+    protected String sequence;
 
-    private Set<String> functions;
+    protected Set<String> functions;
 
     public Protein(String uniprotId, String name, String sequence, Set<String> functions) {
         this.uniprotId = uniprotId;
@@ -36,6 +36,10 @@ public class Protein {
     @Override
     public int hashCode() {
         return Objects.hash(uniprotId, name);
+    }
+
+    public String getBasicInfo() {
+        return name + " (" + uniprotId + ")";
     }
 
     public String getUniprotId() {

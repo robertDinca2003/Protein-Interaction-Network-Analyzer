@@ -1,6 +1,7 @@
 package org.pina.service;
 
 import org.pina.model.Community;
+import org.pina.model.HumanProtein;
 import org.pina.model.Protein;
 
 import java.util.*;
@@ -14,6 +15,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import org.pina.model.ViralProtein;
 
 public class NetworkService {
 
@@ -120,14 +122,16 @@ public class NetworkService {
             for (JsonElement element : interactions) {
                 JsonObject interaction = element.getAsJsonObject();
 
-                Protein p1 = createProtein(
+                Protein p1 = createProteinFromApiData(
                         interaction.get("stringId_A").getAsString(),
-                        interaction.get("preferredName_A").getAsString()
+                        interaction.get("preferredName_A").getAsString(),
+                        interaction.getAsJsonObject("proteinA_details")
                 );
 
-                Protein p2 = createProtein(
+                Protein p2 = createProteinFromApiData(
                         interaction.get("stringId_B").getAsString(),
-                        interaction.get("preferredName_B").getAsString()
+                        interaction.get("preferredName_B").getAsString(),
+                        interaction.getAsJsonObject("proteinA_details")
                 );
 
                 if (currentNetwork.addProtein(p1)) newCount++;
@@ -146,11 +150,30 @@ public class NetworkService {
         }
     }
 
-    private Protein createProtein(String stringId, String name) {
-        return new Protein(
-                stringId.substring(stringId.lastIndexOf('.') + 1),
-                name, "", new HashSet<>()
-        );
+    private Protein createProteinFromApiData(String stringId, String name, JsonObject details) {
+        try{
+            String uniprotId = stringId.substring(stringId.lastIndexOf('.') + 1);
+
+            if (details != null && details.has("taxon") && details.get("taxon").getAsString().equals("9606")) {
+                String tissue = details.has("tissueExpression")
+                        ? details.get("tissueExpression").getAsString()
+                        : "Unknown";
+                return new HumanProtein(uniprotId, name, "", new HashSet<>(), tissue);
+            }
+            else if (details != null && details.has("taxon") && details.get("taxon").getAsString().startsWith("virus")) {
+                String host = details.has("host")
+                        ? details.get("host").getAsString()
+                        : "Unknown";
+                return new ViralProtein(uniprotId, name, "", new HashSet<>(), host);
+            }
+
+            return new Protein(uniprotId, name, "", new HashSet<>());
+        }catch (Exception e){
+            e.printStackTrace();
+            System.err.println("Failed to create protein from API data");
+            return null;
+        }
+
     }
 
     public void generateNetworkImage(){
