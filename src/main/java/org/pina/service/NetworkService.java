@@ -16,6 +16,8 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import org.pina.model.ViralProtein;
+//FILE formats
+import java.nio.file.*;
 
 public class NetworkService {
 
@@ -34,6 +36,7 @@ public class NetworkService {
         String name = scanner.nextLine();
         currentNetwork = new PPINetwork(name);
         System.out.println("Network successfully created: " + currentNetwork.getNetworkName());
+        AuditService.INSTANCE.log("created_network| " + currentNetwork.getNetworkName());
     }
     public void getHubProteins() {
         List<Map.Entry<Protein,Integer>> hubProteins = currentNetwork.findHubProteins();
@@ -42,6 +45,7 @@ public class NetworkService {
             int score = entry.getValue();
             System.out.println(protein.getName()+ ": score " + String.valueOf(score));
         }
+        AuditService.INSTANCE.log("protein_hubs_retrieved|" + currentNetwork.getNetworkName());
     }
 
     public void addProtein() {
@@ -81,13 +85,12 @@ public class NetworkService {
                 throw new Exception("Protein name not found");
             }
 
-//            AuditService.INSTANCE.log("fetch_protein|" + proteinName);
 
         } catch (Exception e) {
             System.err.println("Failed to fetch " + proteinName);
             return;
         }
-        // AuditService.INSTANCE.log("added_to_network|"+ proteinName);
+         AuditService.INSTANCE.log("added_to_network|"+ proteinName);
     }
 
     public void removeProtein() {
@@ -100,7 +103,7 @@ public class NetworkService {
             return;
         }
         currentNetwork.removeProtein(targetProtein);
-//        AuditService.INSTANCE.log("removed_from_network|"+proteinName);
+        AuditService.INSTANCE.log("removed_from_network|"+proteinName);
     }
 
     public void getCommunities() {
@@ -111,6 +114,7 @@ public class NetworkService {
             System.out.println(community);
             System.out.println("\n================\n");
         }
+        AuditService.INSTANCE.log("communities_retrieved|" + currentNetwork.getNetworkName());
     }
 
 
@@ -210,6 +214,7 @@ public class NetworkService {
             }
         }
         System.out.println("Fetched " + fetched + " new proteins!");
+        AuditService.INSTANCE.log("fetched_new_proteins|" + fetchedProteins.size());
     }
 
     private String getRandomProtein() {
@@ -291,9 +296,48 @@ public class NetworkService {
 
     }
 
-    public void generateNetworkImage(){
+    public void generateNetworkImage() {
+        if (currentNetwork == null || currentNetwork.getProteins().isEmpty()) {
+            System.out.println("No active network or network is empty!");
+            return;
+        }
 
+        try {
+            List<String> proteinIds = currentNetwork.getProteins().stream()
+                    .map(Protein::getUniprotId)
+                    .toList();
+
+            String identifiersParam = String.join("%0d", proteinIds);
+
+            String apiUrl = "https://string-db.org/api/image/network?"
+                    + "identifiers=" + identifiersParam
+                    + "&species=9606"
+                    + "&caller_identity=PINA";
+
+            HttpClient client = HttpClient.newHttpClient();
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(apiUrl))
+                    .header("Accept", "image/png")
+                    .build();
+
+            HttpResponse<byte[]> response = client.send(request, HttpResponse.BodyHandlers.ofByteArray());
+
+            if (response.statusCode() == 200) {
+                String fileName = currentNetwork.getNetworkName().replaceAll("\\s+", "_") + ".png";
+                Path path = java.nio.file.Paths.get(fileName);
+                Files.write(path, response.body());
+
+                System.out.println("Network image saved as: " + fileName);
+            } else {
+                System.out.println("Failed to generate network image. API returned status: " + response.statusCode());
+            }
+        } catch (Exception e) {
+            System.err.println("Error generating network image: " + e.getMessage());
+            e.printStackTrace();
+        }
+        AuditService.INSTANCE.log("generate_network_image");
     }
+
 
     public void displayNetworkMenu() {
         String networkStatus = (currentNetwork != null)
@@ -326,7 +370,7 @@ public class NetworkService {
         System.out.println("2. Load network");
         if (currentNetwork != null) {
             System.out.println("3. Save network");
-            System.out.println("4. Fetch new proteins");
+            System.out.println("4. Fetch random new proteins");
             System.out.println("5. Add custom protein");
             System.out.println("6. Remove protein");
             System.out.println("7. Predict interactions");
@@ -340,6 +384,7 @@ public class NetworkService {
     public void runPINA(){
         int option = -1;
         Scanner scanner = new Scanner(System.in);
+        AuditService.INSTANCE.log("run_pina");
         while (option != 0) {
             displayNetworkMenu();
             option = scanner.nextInt();
@@ -382,6 +427,7 @@ public class NetworkService {
                     break;
             }
         }
+        AuditService.INSTANCE.log("exit_pina");
     }
 
 }

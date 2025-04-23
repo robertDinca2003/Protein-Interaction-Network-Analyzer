@@ -87,6 +87,7 @@ public class PPINetwork {
             adjacencyList.get(p1).add(p2);
             adjacencyList.get(p2).add(p1);
         }
+        AuditService.INSTANCE.log("interaction_added|"+p1.getName()+";"+p2.getName()+";"+score);
     }
 
     public List<Map.Entry<Protein, Integer>> findHubProteins() {
