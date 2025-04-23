@@ -44,12 +44,63 @@ public class NetworkService {
         }
     }
 
-    public void addProtein(String proteinName) {
-        currentNetwork.addProtein(new Protein("",proteinName,"", new HashSet<>()));
+    public void addProtein() {
+        Scanner scanner = new Scanner(System.in);
+        System.out.println("» Enter protein name: ");
+        String proteinName = scanner.nextLine();
+
+        try {
+            String apiUrl = "https://string-db.org/api/json/network?identifiers=" + proteinName
+                    + "&species=9606&required_score=700&caller_identity=PINA";
+
+            HttpClient client = HttpClient.newHttpClient();
+            HttpResponse<String> response = client.send(
+                    HttpRequest.newBuilder().uri(URI.create(apiUrl)).build(),
+                    HttpResponse.BodyHandlers.ofString()
+            );
+
+            if (response.statusCode() != 200) return;
+
+            JsonArray interactions = JsonParser.parseString(response.body()).getAsJsonArray();
+            boolean found = false;
+            for (JsonElement element : interactions) {
+                JsonObject interaction = element.getAsJsonObject();
+                if(interaction.get("preferredName_A").getAsString().equals(proteinName)) {
+                    Protein p1 = createProteinFromApiData(
+                            interaction.get("stringId_A").getAsString(),
+                            interaction.get("preferredName_A").getAsString(),
+                            interaction.getAsJsonObject("proteinA_details")
+                    );
+                    found = true;
+                    currentNetwork.addProtein(p1);
+                    break;
+                }
+
+            }
+            if (!found) {
+                throw new Exception("Protein name not found");
+            }
+
+//            AuditService.INSTANCE.log("fetch_protein|" + proteinName);
+
+        } catch (Exception e) {
+            System.err.println("Failed to fetch " + proteinName);
+            return;
+        }
+        // AuditService.INSTANCE.log("added_to_network|"+ proteinName);
     }
 
-    public void removeProtein(String proteinName) {
-        currentNetwork.removeProtein(currentNetwork.findProtein(proteinName));
+    public void removeProtein() {
+        Scanner scanner = new Scanner(System.in);
+        System.out.println("Enter protein name: ");
+        String proteinName = scanner.nextLine();
+        Protein targetProtein = currentNetwork.findProtein(proteinName);
+        if(targetProtein == null) {
+            System.out.println("Protein name not found");
+            return;
+        }
+        currentNetwork.removeProtein(targetProtein);
+//        AuditService.INSTANCE.log("removed_from_network|"+proteinName);
     }
 
     public void getCommunities() {
@@ -62,7 +113,71 @@ public class NetworkService {
         }
     }
 
-    public void predictInteractions() {  }
+
+    public void predictInteractions() {
+        if (currentNetwork == null || currentNetwork.getProteins().size() < 2) {
+            System.out.println("Need at least 2 proteins to predict interactions!");
+            return;
+        }
+
+        try {
+            List<String> proteinIds = currentNetwork.getProteins().stream()
+                    .map(Protein::getUniprotId)
+                    .toList();
+
+            String apiUrl = "https://string-db.org/api/json/network?"
+                    + "identifiers=" + String.join("%0d", proteinIds)
+                    + "&species=9606"  // Human proteins
+                    + "&required_score=700"  // Minimum confidence score 0.7
+                    + "&caller_identity=PINA";
+
+            HttpClient client = HttpClient.newHttpClient();
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(apiUrl))
+                    .header("Accept", "application/json")
+                    .build();
+
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+            if (response.statusCode() == 200) {
+                JsonArray interactions = JsonParser.parseString(response.body()).getAsJsonArray();
+                int addedInteractions = processPredictedInteractions(interactions);
+
+                System.out.println("Added " + addedInteractions + " new interactions!");
+//                AuditService.INSTANCE.log("predict_interactions|added:" + addedInteractions);
+            } else {
+                System.out.println("API Error: " + response.statusCode());
+            }
+        } catch (Exception e) {
+            System.err.println("Prediction failed: " + e.getMessage());
+        }
+    }
+
+    private int processPredictedInteractions(JsonArray interactions) {
+        int addedCount = 0;
+
+        for (JsonElement element : interactions) {
+            JsonObject interaction = element.getAsJsonObject();
+
+            String proteinAId = extractUniprotId(interaction.get("stringId_A").getAsString());
+            String proteinBId = extractUniprotId(interaction.get("stringId_B").getAsString());
+            double score = interaction.get("score").getAsDouble();
+
+            Protein p1 = currentNetwork.findProteinById(proteinAId);
+            Protein p2 = currentNetwork.findProteinById(proteinBId);
+
+            if (p1 != null && p2 != null) {
+                currentNetwork.addInteraction(p1, p2, score);
+                addedCount++;
+            }
+        }
+        return addedCount;
+    }
+
+    private String extractUniprotId(String stringId) {
+        // Convert STRING-DB ID "9606.ENSP00000269305" to UniProt ID
+        return stringId.substring(stringId.lastIndexOf('.') + 1);
+    }
 
     public List<String> getSavedNetworks(){
         return new ArrayList<>();
@@ -106,7 +221,7 @@ public class NetworkService {
     private int fetchProteinFromAPI(String proteinQuery) {
         try {
             String apiUrl = "https://string-db.org/api/json/network?identifiers=" + proteinQuery
-                    + "&species=9606&required_score=700&caller_identity=your_project_name";
+                    + "&species=9606&required_score=700&caller_identity=PINA";
 
             HttpClient client = HttpClient.newHttpClient();
             HttpResponse<String> response = client.send(
@@ -245,10 +360,10 @@ public class NetworkService {
                     fetchNewProteins();
                     break;
                 case 5:
-                    addProtein("Protein");
+                    addProtein();
                     break;
                 case 6:
-                    removeProtein("Protein");
+                    removeProtein();
                     break;
                 case 7:
                     predictInteractions();

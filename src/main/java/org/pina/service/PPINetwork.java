@@ -40,18 +40,6 @@ public class PPINetwork {
         return true;
     }
 
-    public void addInteraction(Protein p1, Protein p2, double score) {
-        Interaction interaction = new Interaction(p1, p2, score);
-
-        // Add to interactions list
-        if (!interactions.contains(interaction)) {
-            interactions.add(interaction);
-
-            // Update adjacency list
-            adjacencyList.get(p1).add(p2);
-            adjacencyList.get(p2).add(p1);
-        }
-    }
 
     public List<Protein> getProteins() {
         return new ArrayList<>(networkProteins);
@@ -68,17 +56,37 @@ public class PPINetwork {
 
     public void removeProtein(Protein protein) {
         networkProteins.remove(protein);
-        for (Interaction interaction : interactions) {
-            if (interaction.getProtein1().equals(protein) || interaction.getProtein2().equals(protein))
-            {
-                interactions.remove(protein);
+
+        Iterator<Interaction> iterator = interactions.iterator();
+        while (iterator.hasNext()) {
+            Interaction interaction = iterator.next();
+            if (interaction.getProtein1().equals(protein) || interaction.getProtein2().equals(protein)) {
+                iterator.remove();
             }
         }
 
         adjacencyList.remove(protein);
+
+        for (List<Protein> neighbors : adjacencyList.values()) {
+            neighbors.remove(protein);
+        }
     }
 
-    public void createInteractions() {
+
+    public Protein findProteinById(String uniprotId) {
+        return networkProteins.stream()
+                .filter(p -> p.getUniprotId().equalsIgnoreCase(uniprotId))
+                .findFirst()
+                .orElse(null);
+    }
+
+    public void addInteraction(Protein p1, Protein p2, double score) {
+        Interaction interaction = new Interaction(p1, p2, score);
+        if (!interactions.contains(interaction)) {
+            interactions.add(interaction);
+            adjacencyList.get(p1).add(p2);
+            adjacencyList.get(p2).add(p1);
+        }
     }
 
     public List<Map.Entry<Protein, Integer>> findHubProteins() {
