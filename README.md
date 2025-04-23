@@ -6,11 +6,11 @@ Protein Interaction Network Analyzer (PINA) is a Java based application designed
 
 ## Possible interactions:
 
-- [ ] Create Protein Network
-- [ ] Add Proteins to the Network
+- [X] Create Protein Network
+- [X] Add Proteins to the Network
 - [ ] Remove Proteins from the Network
-- [ ] Obtain protein Hubs
-- [ ] Obtain Protein Communities
+- [X] Obtain protein Hubs
+- [X] Obtain Protein Communities
 - [ ] Save Network
 - [ ] Load Network
 - [ ] *Protein Link Prediction
