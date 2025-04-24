@@ -115,49 +115,65 @@ public class PPINetwork {
         return null;
     }
 
-    public List<Protein> findProteinCommunity(Protein protein) {
-        List<Protein> proteins = new ArrayList<>();
+    public List<Community> findCommunities() {
+        Set<Protein> verified = new HashSet<>();
+        List<List<Protein>> hubCommunities = new ArrayList<>();
+
+        Set<Protein> proteinsInExistingCommunities = new HashSet<>();
+        for (Community c : communities) {
+            proteinsInExistingCommunities.addAll(c.getProteins());
+        }
+
+        for (Protein protein : networkProteins) {
+            if (!verified.contains(protein) && !proteinsInExistingCommunities.contains(protein)) {
+                List<Protein> proteins = findProteinCommunity(protein);
+                hubCommunities.add(proteins);
+                verified.addAll(proteins);
+            }
+        }
+
+        Scanner scanner = new Scanner(System.in);
+
+        for (List<Protein> hubCommunity : hubCommunities) {
+            Set<Protein> proteinsSet = new HashSet<>(hubCommunity);
+
+            Community matchedCommunity = null;
+            for (Community existingCommunity : communities) {
+                if (existingCommunity.getProteins().containsAll(proteinsSet)) {
+                    matchedCommunity = existingCommunity;
+                    break;
+                }
+            }
+
+            if (matchedCommunity == null) {
+                System.out.println("Enter community name for new community with proteins:");
+                for (Protein p : proteinsSet) {
+                    System.out.println(" - " + p.getName() + " (" + p.getUniprotId() + ")");
+                }
+                String communityName = scanner.nextLine().trim();
+
+                Community newCommunity = new Community(communityName, proteinsSet, "");
+                communities.add(newCommunity);
+            }
+        }
+
+        return new ArrayList<>(communities);
+    }
+
+    private List<Protein> findProteinCommunity(Protein protein) {
+        Set<Protein> seenProteins = new HashSet<>();
         Queue<Protein> queue = new LinkedList<>();
         queue.add(protein);
-        Set<Protein> visited = new HashSet<>();
         while (!queue.isEmpty()) {
-            Protein current = queue.poll();
-            proteins.add(current);
-            visited.add(current);
-            List<Protein> neighbors = adjacencyList.get(current);
-            for (Protein neighbor : neighbors) {
-                if (!visited.contains(neighbor)) {
+            Protein p = queue.poll();
+            seenProteins.add(p);
+            for (Protein neighbor : adjacencyList.getOrDefault(p, Collections.emptyList())) {
+                if (!seenProteins.contains(neighbor)) {
                     queue.add(neighbor);
                 }
             }
         }
-
-        return proteins;
-    }
-
-    public List<Community> findCommunities() {
-        Set<Protein> verified = new HashSet<>();
-        List<List<Protein>> hubCommunities = new ArrayList<>();
-        for (Protein protein : networkProteins) {
-            if(!verified.contains(protein)) {
-               List<Protein> proteins = findProteinCommunity(protein);
-               hubCommunities.add(proteins);
-               for (Protein neighbourProtein : proteins) {
-                   verified.add(neighbourProtein);
-               }
-            }
-        }
-        Scanner scanner = new Scanner(System.in);
-        List<Community> communities = new ArrayList<>();
-        for (List<Protein> hubCommunity : hubCommunities) {
-            Set<Protein> proteins = new HashSet<Protein>(hubCommunity);
-            System.out.println("Enter community name: ");
-            String communityName = scanner.nextLine();
-            Community community = new Community(communityName,proteins,"");
-            communities.add(community);
-        }
-
-        return communities;
+        return new ArrayList<>(seenProteins);
     }
 
 
@@ -167,6 +183,14 @@ public class PPINetwork {
 
     public void setNetworkName(String networkName) {
         this.networkName = networkName;
+    }
+
+    public List<Interaction> getInteractions() {
+        return List.copyOf(interactions);
+    }
+
+    public Set<Community> getCommunities() {
+        return Set.copyOf(communities);
     }
 
     @Override

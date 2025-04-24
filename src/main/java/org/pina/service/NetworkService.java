@@ -1,9 +1,12 @@
 package org.pina.service;
 
+import org.pina.dao.*;
 import org.pina.model.Community;
 import org.pina.model.HumanProtein;
 import org.pina.model.Protein;
 
+import java.sql.Connection;
+import java.sql.SQLException;
 import java.util.*;
 // HTTP Client
 import java.net.http.HttpClient;
@@ -23,11 +26,29 @@ public class NetworkService {
 
     private PPINetwork currentNetwork;
     private final Random random = new Random();
-    private final Set<String> availableProteins = new HashSet<>(Arrays.asList(
-            "TP53", "BRCA1", "EGFR", "AKT1", "MYC", "VEGFA",
-            "INS", "MAPK1", "JUN", "TNF", "IL6", "CDKN2A"
-    ));
+    private final Set<String> availableProteins = new HashSet<>();
     private final Set<String> fetchedProteins = new HashSet<>();
+    Connection conn;
+    ProteinDAO proteinDAO;
+
+    InteractionDAO interactionDAO;
+
+    CommunityDAO communityDAO;
+
+    PPINetworkDAO ppnDAO;
+
+    public NetworkService() throws SQLException {
+        this.conn = DatabaseConnection.getInstance().getConnection();
+        this.proteinDAO = new ProteinDAO(conn);
+        this.interactionDAO = new InteractionDAO(conn);
+        this.communityDAO = new CommunityDAO(conn);
+        this.ppnDAO = new PPINetworkDAO(conn);
+
+        // Load protein names from DB and add to availableProteins
+        List<String> proteinNamesFromDb = proteinDAO.getAllProteinNames();
+        this.availableProteins.addAll(proteinNamesFromDb);
+    }
+
 
     // Methods:
     public void createNetwork() {
@@ -48,10 +69,19 @@ public class NetworkService {
         AuditService.INSTANCE.log("protein_hubs_retrieved|" + currentNetwork.getNetworkName());
     }
 
-    public void addProtein() {
+    public void addProtein() throws SQLException {
         Scanner scanner = new Scanner(System.in);
         System.out.println("» Enter protein name: ");
         String proteinName = scanner.nextLine();
+
+        Protein existingProteinDB = proteinDAO.retrieveProteinByNameOrNull(proteinName);
+        if (existingProteinDB != null) {
+            currentNetwork.addProtein(existingProteinDB);
+            System.out.println("Test, it worked");
+            AuditService.INSTANCE.log("added_to_network|"+ proteinName);
+            return;
+        }
+
 
         try {
             String apiUrl = "https://string-db.org/api/json/network?identifiers=" + proteinName
@@ -77,6 +107,7 @@ public class NetworkService {
                     );
                     found = true;
                     currentNetwork.addProtein(p1);
+                    proteinDAO.addProteinIfNotExists(p1);
                     break;
                 }
 
@@ -187,9 +218,17 @@ public class NetworkService {
         return new ArrayList<>();
     }
 
-    public void saveNetwork() {}
+    public void saveNetwork() throws SQLException {
+        ppnDAO.saveNetwork(currentNetwork);
+        AuditService.INSTANCE.log("saved_network|" + currentNetwork.getNetworkName());
+    }
 
-    public void loadNetwork() {}
+    public void loadNetwork() throws SQLException {
+        Scanner scanner = new Scanner(System.in);
+        System.out.println("Enter network name: ");
+        String networkName = scanner.nextLine();
+        this.currentNetwork = ppnDAO.loadNetwork(networkName);
+    }
 
     public void loadSavedProtein(){
 
@@ -261,7 +300,6 @@ public class NetworkService {
                         interaction.get("score").getAsDouble());
             }
 
-//            AuditService.INSTANCE.log("fetch_protein|" + proteinQuery);
             return newCount;
 
         } catch (Exception e) {
@@ -338,6 +376,176 @@ public class NetworkService {
         AuditService.INSTANCE.log("generate_network_image");
     }
 
+    public void getScientificReference() throws SQLException {
+        Scanner scanner  = new Scanner(System.in);
+        System.out.println("Enter your saved protein name: ");
+        String proteinName = scanner.nextLine();
+
+        Protein protein = proteinDAO.retrieveProteinByNameOrNull(proteinName);
+
+        if (protein == null) {
+            System.out.println("Protein with name " + proteinName + " not found");
+            return;
+        }
+
+
+        try {
+            String query = "xref:" + protein.getUniprotId();
+
+            String apiUrl = "https://rest.uniprot.org/uniprotkb/search"
+                    + "?query="   + query
+                    + "&fields=lit_pubmed_id";
+            HttpClient client = HttpClient.newBuilder()
+                    .version(HttpClient.Version.HTTP_1_1)
+                    .build();
+
+            HttpResponse<String> resp = client.send(
+                    HttpRequest.newBuilder().uri(URI.create(apiUrl)).build(),
+                    HttpResponse.BodyHandlers.ofString()
+            );
+
+            if (resp.statusCode() != 200) {
+                System.err.println("HTTP error: " + resp.statusCode());
+                return;
+            }
+
+            JsonObject root = JsonParser.parseString(resp.body()).getAsJsonObject();
+            JsonArray results = root.getAsJsonArray("results");
+            if (results == null || results.size() == 0) {
+                System.out.println("No entries found.");
+                return;
+            }
+
+            for (JsonElement entryEl : results) {
+                JsonObject entry = entryEl.getAsJsonObject();
+                String accession = entry.get("primaryAccession").getAsString();
+                System.out.println("=== UniProtKB:" + accession + " ===");
+
+                JsonArray references = entry.getAsJsonArray("references");
+                if (references == null) {
+                    System.out.println("  (no references)");
+                    continue;
+                }
+
+                for (JsonElement refEl : references) {
+                    JsonObject citation = refEl.getAsJsonObject()
+                            .getAsJsonObject("citation");
+
+                    String title   = citation.has("title")   ? citation.get("title").getAsString()   : "N/A";
+                    String journal = citation.has("journal") ? citation.get("journal").getAsString() : "N/A";
+
+                    String doi = "N/A";
+                    if (citation.has("citationCrossReferences")) {
+                        JsonArray xrefs = citation.getAsJsonArray("citationCrossReferences");
+                        for (JsonElement xrEl : xrefs) {
+                            JsonObject xr = xrEl.getAsJsonObject();
+                            if ("DOI".equalsIgnoreCase(xr.get("database").getAsString())) {
+                                doi = xr.get("id").getAsString();
+                                break;
+                            }
+                        }
+                    }
+
+                    System.out.printf(" • \"%s\" — %s (DOI:%s)%n", title, journal, doi);
+                }
+                System.out.println();
+            }
+
+        } catch (Exception e) {
+            System.err.println("Error fetching citations: " + e.getMessage());
+            e.printStackTrace();
+        }
+
+    }
+
+    public void updateProteinData() throws SQLException {
+        Scanner scanner  = new Scanner(System.in);
+        System.out.println("Enter your saved protein name: ");
+        String proteinName = scanner.nextLine();
+
+        Protein protein = proteinDAO.retrieveProteinByNameOrNull(proteinName);
+
+        if (protein == null) {
+            System.out.println("Protein with name " + proteinName + " not found");
+            return;
+        }
+        proteinDAO.deleteProteinByName(proteinName);
+
+        System.out.println("Do you want to update protein name? [Y/N]: ");
+        String doi = scanner.nextLine();
+        if (doi.equalsIgnoreCase("Y")) {
+            System.out.println("Enter new protein name: ");
+            protein.setName(scanner.nextLine());
+        }
+        System.out.println("Do you want to update protein type? [Y/N]: ");
+        String doi2 = scanner.nextLine();
+        if (doi2.equalsIgnoreCase("Y")) {
+            System.out.println("1. Protein\n2. Viral\n3. Human\nEnter new protein type: ");
+            String proteinType = scanner.nextLine();
+            if (proteinType.equalsIgnoreCase("Human")) {
+                proteinDAO.addProteinIfNotExists(new HumanProtein(protein.getUniprotId(), protein.getName(), protein.getSequence(), protein.getFunctions(), ""));
+                return;
+            }
+            if (proteinType.equalsIgnoreCase("Viral")) {
+                proteinDAO.addProteinIfNotExists(new ViralProtein(protein.getUniprotId(), protein.getName(), protein.getSequence(), protein.getFunctions(), ""));
+                return;
+            }
+        }
+
+        proteinDAO.addProteinIfNotExists(protein);
+    }
+
+    public void deleteProteinFromDB() throws SQLException {
+        Scanner scanner  = new Scanner(System.in);
+        System.out.println("Enter your saved protein name to be deleted: ");
+        scanner.nextLine();
+        String proteinName = scanner.nextLine();
+        System.out.println("Do you want to delete the protein? [Y/N]: ");
+        String doi = scanner.nextLine();
+        if (doi.equalsIgnoreCase("Y")) {
+            proteinDAO.deleteProteinByName(proteinName);
+            System.out.println("Successfully deleted protein with name " + proteinName);
+        }
+        if (doi.equalsIgnoreCase("N")) {
+            System.out.println("Successfully declined the request");
+        }
+    }
+
+    public void deleteCommunity() throws SQLException {
+        Scanner scanner  = new Scanner(System.in);
+        System.out.println("Enter your community name: ");
+        String communityName = scanner.nextLine();
+        System.out.println("Do you want to delete the community? [Y/N]: ");
+        String doi = scanner.nextLine();
+        if (doi.equalsIgnoreCase("Y")) {
+            communityDAO.deleteCommunity(communityName);
+            System.out.println("Successfully deleted community with name " + communityName);
+        }
+        if (doi.equalsIgnoreCase("N")) {
+            System.out.println("Successfully declined the request");
+        }
+    }
+
+    public void deleteInteraction() throws SQLException {
+        Scanner scanner  = new Scanner(System.in);
+        System.out.println("Enter first protein name: ");
+        String proteinName1 = scanner.nextLine();
+        System.out.println("Enter second protein name: ");
+        String proteinName2 = scanner.nextLine();
+
+        Protein protein1 = proteinDAO.retrieveProteinByNameOrNull(proteinName1);
+        Protein protein2 = proteinDAO.retrieveProteinByNameOrNull(proteinName2);
+        if (protein1 == null || protein2 == null) {
+            System.out.println("Protein name not found");
+        }
+        if(interactionDAO.deleteInteraction(protein1.getUniprotId(), protein2.getUniprotId())){
+            System.out.println("Successfully deleted interaction");
+        }
+        else{
+            System.out.println("Failed to delete interaction");
+        }
+
+    }
 
     public void displayNetworkMenu() {
         String networkStatus = (currentNetwork != null)
@@ -352,15 +560,13 @@ public class NetworkService {
 
 
             System.out.println("\n» Available Proteins:");
-            List<Protein> fetched = currentNetwork.getProteins().stream()
-                    .filter(p -> fetchedProteins.contains(p.getName()))
-                    .toList();
+            List<String> fetched = availableProteins.stream().toList();
 
             if (fetched.isEmpty()) {
                 System.out.println("No protein available! (use option [4])");
             } else {
                 fetched.forEach(p ->
-                        System.out.println("- " + p.getName() + " (" + p.getUniprotId() + ")")
+                        System.out.println("- " + p)
                 );
             }
 
@@ -377,11 +583,16 @@ public class NetworkService {
             System.out.println("8. Generate network image");
             System.out.println("9. Show hub proteins");
             System.out.println("10. Show communities");
+            System.out.println("11. Show scientific references");
+            System.out.println("12. Update protein data");
+            System.out.println("13. Delete protein from database");
+            System.out.println("14. Delete community from network");
+            System.out.println("15. Delete interaction from network");
         }
         System.out.println("0. Exit");
         System.out.print("\nEnter choice: ");
     }
-    public void runPINA(){
+    public void runPINA() throws SQLException {
         int option = -1;
         Scanner scanner = new Scanner(System.in);
         AuditService.INSTANCE.log("run_pina");
@@ -422,6 +633,23 @@ public class NetworkService {
                 case 10:
                     getCommunities();
                     break;
+                case 11:
+                    getScientificReference();
+                    break;
+
+                case 12:
+                    updateProteinData();
+                    break;
+                case 13:
+                    deleteProteinFromDB();
+                    break;
+                case 14:
+                    deleteCommunity();
+                    break;
+                case 15:
+                    deleteInteraction();
+                    break;
+
                 default:
                     System.out.println("Invalid option");
                     break;

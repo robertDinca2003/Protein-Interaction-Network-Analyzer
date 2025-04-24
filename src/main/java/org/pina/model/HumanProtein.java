@@ -11,6 +11,14 @@ public class HumanProtein extends Protein {
         this.tissueExpression = tissueExpression;
     }
 
+    public String getTissueExpression() {
+        return tissueExpression;
+    }
+
+    public void setTissueExpression(String tissueExpression) {
+        this.tissueExpression = tissueExpression;
+    }
+
     @Override
     public String getBasicInfo() {
         return "[Human] " + super.getBasicInfo() + " | Expressed in: " + tissueExpression;

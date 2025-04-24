@@ -11,6 +11,14 @@ public class ViralProtein extends Protein {
         this.hostSpecies = hostSpecies;
     }
 
+    public String getHostSpecies() {
+        return hostSpecies;
+    }
+
+    public void setHostSpecies(String hostSpecies) {
+        this.hostSpecies = hostSpecies;
+    }
+
     @Override
     public String getBasicInfo() {
         return "[Viral] " + super.getBasicInfo() + " | Host: " + hostSpecies;
