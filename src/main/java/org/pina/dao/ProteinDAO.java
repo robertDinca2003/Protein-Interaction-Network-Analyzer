@@ -220,6 +220,10 @@ public class ProteinDAO {
             } else {
                 return false;
             }
+        }catch (Exception e) {
+            e.printStackTrace();
+
+            return false;
         }
     }
 

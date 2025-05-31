@@ -51,13 +51,37 @@ public class NetworkService {
 
 
     // Methods:
-    public void createNetwork() {
+    public void createNetwork() throws SQLException {
         Scanner scanner = new Scanner(System.in);
+        if(this.currentNetwork != null) {
+            System.out.println("Do you want to save the current network? [Y/N]");
+            if(scanner.nextLine().equalsIgnoreCase("Y")) {
+                saveNetwork();
+            }
+        }
         System.out.print("Enter network name: ");
         String name = scanner.nextLine();
+        HashSet<String> usedNames = new HashSet<String>(ppnDAO.listNetworkNames());
+        if (usedNames.contains(name)) {
+            System.out.println("Network already exists!");
+            AuditService.INSTANCE.log("unsuccessfully_created_network|network_already_exists " );
+            return;
+        }
         currentNetwork = new PPINetwork(name);
         System.out.println("Network successfully created: " + currentNetwork.getNetworkName());
         AuditService.INSTANCE.log("created_network| " + currentNetwork.getNetworkName());
+    }
+
+    public void listNetworks() throws SQLException {
+        System.out.println("Available networks:");
+        List<String> networkNames =  ppnDAO.listNetworkNames();
+        for(String networkName : networkNames) {
+            System.out.println("- " + networkName);
+        }
+        if (networkNames.size() == 0) {
+            System.out.println("No networks found");
+        }
+        AuditService.INSTANCE.log("listed_networks|"+networkNames.size());
     }
     public void getHubProteins() {
         List<Map.Entry<Protein,Integer>> hubProteins = currentNetwork.findHubProteins();
@@ -76,8 +100,11 @@ public class NetworkService {
 
         Protein existingProteinDB = proteinDAO.retrieveProteinByNameOrNull(proteinName);
         if (existingProteinDB != null) {
-            currentNetwork.addProtein(existingProteinDB);
-            System.out.println("Test, it worked");
+            boolean alreadyExists = currentNetwork.addProtein(existingProteinDB);
+//            System.out.println("Test, it worked");
+            if(alreadyExists == false) {
+                System.out.println("Protein already exists!");
+            }
             AuditService.INSTANCE.log("added_to_network|"+ proteinName);
             return;
         }
@@ -121,7 +148,8 @@ public class NetworkService {
             System.err.println("Failed to fetch " + proteinName);
             return;
         }
-         AuditService.INSTANCE.log("added_to_network|"+ proteinName);
+        System.out.println("Added new protein");
+        AuditService.INSTANCE.log("added_to_network|"+ proteinName);
     }
 
     public void removeProtein() {
@@ -214,22 +242,34 @@ public class NetworkService {
         return stringId.substring(stringId.lastIndexOf('.') + 1);
     }
 
-    public List<String> getSavedNetworks(){
-        return new ArrayList<>();
-    }
-
     public void saveNetwork() throws SQLException {
         ppnDAO.saveNetwork(currentNetwork);
+        System.out.println("Successfully saved network");
         AuditService.INSTANCE.log("saved_network|" + currentNetwork.getNetworkName());
     }
 
     public void loadNetwork() throws SQLException {
         Scanner scanner = new Scanner(System.in);
+        if(this.currentNetwork != null) {
+            System.out.println("Do you want to save the current network? [Y/N]");
+            String answer = scanner.nextLine();
+            if (answer.equalsIgnoreCase("Y")) {
+                saveNetwork();
+            }
+        }
         System.out.println("Enter network name: ");
         String networkName = scanner.nextLine();
         this.currentNetwork = ppnDAO.loadNetwork(networkName);
+        if(this.currentNetwork == null) {
+            System.out.println("Network not found!");
+            AuditService.INSTANCE.log("load_network|network_not_found" );
+            return;
+        }
+        AuditService.INSTANCE.log("load_network|" + currentNetwork.getNetworkName());
     }
 
+
+    @Deprecated
     public void loadSavedProtein(){
 
     }
@@ -451,6 +491,8 @@ public class NetworkService {
                 System.out.println();
             }
 
+            AuditService.INSTANCE.log("obtained_scientific_reference|"+proteinName);
+
         } catch (Exception e) {
             System.err.println("Error fetching citations: " + e.getMessage());
             e.printStackTrace();
@@ -480,33 +522,44 @@ public class NetworkService {
         System.out.println("Do you want to update protein type? [Y/N]: ");
         String doi2 = scanner.nextLine();
         if (doi2.equalsIgnoreCase("Y")) {
-            System.out.println("1. Protein\n2. Viral\n3. Human\nEnter new protein type: ");
+            System.out.println("- Protein\n- Viral\n- Human\nEnter new protein type: ");
             String proteinType = scanner.nextLine();
             if (proteinType.equalsIgnoreCase("Human")) {
-                proteinDAO.addProteinIfNotExists(new HumanProtein(protein.getUniprotId(), protein.getName(), protein.getSequence(), protein.getFunctions(), ""));
+                System.out.println("Enter tissue expression of the human protein:");
+                String humanExpression = scanner.nextLine();
+                proteinDAO.addProteinIfNotExists(new HumanProtein(protein.getUniprotId(), protein.getName(), protein.getSequence(), protein.getFunctions(), humanExpression));
                 return;
             }
             if (proteinType.equalsIgnoreCase("Viral")) {
-                proteinDAO.addProteinIfNotExists(new ViralProtein(protein.getUniprotId(), protein.getName(), protein.getSequence(), protein.getFunctions(), ""));
+                System.out.println("Enter host species of the viral protein: ");
+                String species = scanner.nextLine();
+                proteinDAO.addProteinIfNotExists(new ViralProtein(protein.getUniprotId(), protein.getName(), protein.getSequence(), protein.getFunctions(), species));
                 return;
             }
+            if (proteinType.equalsIgnoreCase("Protein")) {
+                proteinDAO.addProteinIfNotExists(new Protein(protein.getUniprotId(), protein.getName(), protein.getSequence(), protein.getFunctions()));
+            }
         }
-
+        AuditService.INSTANCE.log("update_protein_data|"+proteinName);
         proteinDAO.addProteinIfNotExists(protein);
+        this.currentNetwork = ppnDAO.loadNetwork(currentNetwork.getNetworkName());
     }
 
     public void deleteProteinFromDB() throws SQLException {
         Scanner scanner  = new Scanner(System.in);
         System.out.println("Enter your saved protein name to be deleted: ");
-        scanner.nextLine();
         String proteinName = scanner.nextLine();
         System.out.println("Do you want to delete the protein? [Y/N]: ");
         String doi = scanner.nextLine();
         if (doi.equalsIgnoreCase("Y")) {
             proteinDAO.deleteProteinByName(proteinName);
             System.out.println("Successfully deleted protein with name " + proteinName);
+            AuditService.INSTANCE.log("deleted_protein_from_db|"+proteinName);
+
+            this.currentNetwork = ppnDAO.loadNetwork(currentNetwork.getNetworkName());
         }
         if (doi.equalsIgnoreCase("N")) {
+            AuditService.INSTANCE.log("deleted_protein_from_db|canceled");
             System.out.println("Successfully declined the request");
         }
     }
@@ -519,7 +572,9 @@ public class NetworkService {
         String doi = scanner.nextLine();
         if (doi.equalsIgnoreCase("Y")) {
             communityDAO.deleteCommunity(communityName);
+            this.currentNetwork = ppnDAO.loadNetwork(currentNetwork.getNetworkName());
             System.out.println("Successfully deleted community with name " + communityName);
+            AuditService.INSTANCE.log("deleted_community_from_db|"+communityName);
         }
         if (doi.equalsIgnoreCase("N")) {
             System.out.println("Successfully declined the request");
@@ -540,6 +595,8 @@ public class NetworkService {
         }
         if(interactionDAO.deleteInteraction(protein1.getUniprotId(), protein2.getUniprotId())){
             System.out.println("Successfully deleted interaction");
+            this.currentNetwork = ppnDAO.loadNetwork(currentNetwork.getNetworkName());
+            AuditService.INSTANCE.log("deleted_interaction");
         }
         else{
             System.out.println("Failed to delete interaction");
@@ -547,6 +604,16 @@ public class NetworkService {
 
     }
 
+    public void exitApplication() throws SQLException {
+        Scanner sc  = new Scanner(System.in);
+        if(this.currentNetwork != null){
+            System.out.println("Are you sure you want to exit without saving the current progress? [Y/N]");
+            if (sc.nextLine().equalsIgnoreCase("Y")) {
+                saveNetwork();
+           }
+        }
+        System.out.println("Good  bye!");
+    }
     public void displayNetworkMenu() {
         String networkStatus = (currentNetwork != null)
                 ? currentNetwork.getNetworkName()
@@ -571,23 +638,27 @@ public class NetworkService {
             }
 
       }
-        System.out.println("\n» Options:");
+        System.out.println("\n» Network Options:");
         System.out.println("1. Create new network");
-        System.out.println("2. Load network");
+        System.out.println("2. List available networks");
+        System.out.println("3. Load network");
         if (currentNetwork != null) {
-            System.out.println("3. Save network");
-            System.out.println("4. Fetch random new proteins");
-            System.out.println("5. Add custom protein");
-            System.out.println("6. Remove protein");
-            System.out.println("7. Predict interactions");
-            System.out.println("8. Generate network image");
-            System.out.println("9. Show hub proteins");
-            System.out.println("10. Show communities");
-            System.out.println("11. Show scientific references");
-            System.out.println("12. Update protein data");
-            System.out.println("13. Delete protein from database");
-            System.out.println("14. Delete community from network");
-            System.out.println("15. Delete interaction from network");
+            System.out.println("4. Save network");
+            System.out.println("» Protein Options:");
+            System.out.println("5. Add protein to network");
+            System.out.println("6. Update protein information");
+            System.out.println("7. Remove protein from network");
+            System.out.println("8. Delete protein from database");
+            System.out.println("9. Fetch random new proteins");
+            System.out.println("10. Predict interactions");
+            System.out.println("11. Delete interaction from network & database");
+            System.out.println("» Research Options:");
+            System.out.println("12. Generate network image");
+            System.out.println("13. Show scientific references");
+            System.out.println("14. Show hub proteins");
+            System.out.println("15. Show communities");
+            System.out.println("16. Delete community from network");
+
         }
         System.out.println("0. Exit");
         System.out.print("\nEnter choice: ");
@@ -601,53 +672,66 @@ public class NetworkService {
             option = scanner.nextInt();
             switch (option) {
                 case 0:
-                    System.out.println("Good  bye!");
+                    exitApplication();
                     break;
                 case 1:
                     createNetwork();
                     break;
                 case 2:
-                    loadNetwork();
+                    listNetworks();
                     break;
                 case 3:
-                    saveNetwork();
+                    loadNetwork();
                     break;
                 case 4:
-                    fetchNewProteins();
+                    saveNetwork();
                     break;
                 case 5:
                     addProtein();
                     break;
                 case 6:
-                    removeProtein();
+                    updateProteinData();
+
                     break;
                 case 7:
-                    predictInteractions();
+                    removeProtein();
+
                     break;
                 case 8:
-                    generateNetworkImage();
+                    deleteProteinFromDB();
+
                     break;
                 case 9:
-                    getHubProteins();
+                    fetchNewProteins();
+
                     break;
                 case 10:
-                    getCommunities();
+                    predictInteractions();
+
                     break;
                 case 11:
-                    getScientificReference();
+                    deleteInteraction();
+
                     break;
 
                 case 12:
-                    updateProteinData();
+                    generateNetworkImage();
+
                     break;
                 case 13:
-                    deleteProteinFromDB();
+                    getScientificReference();
+
                     break;
                 case 14:
-                    deleteCommunity();
+                    getHubProteins();
+
                     break;
                 case 15:
-                    deleteInteraction();
+                    getCommunities();
+
+                    break;
+                case 16:
+                    deleteCommunity();
                     break;
 
                 default:

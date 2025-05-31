@@ -52,6 +52,19 @@ public class PPINetworkDAO {
         }
     }
 
+    public List<String> listNetworkNames() throws SQLException {
+        List<String> networkNames = new ArrayList<>();
+        String selectSql = "SELECT name FROM Network";
+        try (PreparedStatement ps = connection.prepareStatement(selectSql)) {
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    networkNames.add(rs.getString(1));
+                }
+            }
+        }
+        return networkNames;
+    }
+
     public PPINetwork loadNetwork(String networkName) throws SQLException {
         int networkId = getNetworkIdByName(networkName);
         if (networkId == -1) return null;

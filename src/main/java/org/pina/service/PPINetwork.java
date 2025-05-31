@@ -201,8 +201,7 @@ public class PPINetwork {
         sb.append("\n» Proteins (").append(networkProteins.size()).append("):\n");
         for (int i = 0; i <  networkProteins.size(); i++) {
             Protein p = networkProteins.get(i);
-            sb.append("- ").append(p.getName())
-                    .append(" (").append(p.getUniprotId()).append(")\n");
+            sb.append("- ").append(p.getBasicInfo()).append("\n");
         }
 
 
